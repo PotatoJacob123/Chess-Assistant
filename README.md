@@ -30,7 +30,7 @@ The first recognition may take longer while Python loads its model. If the app c
 ## Use the app
 
 1. Open **Select Chessboard** and drag a square selection around the board on screen. The selector covers the virtual desktop, including other monitors.
-2. (Optional) Choose **Preview Board Grid**. Drag the four green markers to the board's outer corners, then save the calibration. The preview requires a board capture first.
+2. Choose **Preview Board Grid**. Drag the four green markers to the board's outer corners, then save the calibration. The preview requires a board capture first.
 3. Set **Board View** to match the board on screen: White at Bottom or Black at Bottom.
 4. Choose **White to Move** or **Black to Move** when you need to set the side to move manually.
 5. Choose **Start / Stop Live Analysis** to monitor for changes and show Stockfish's suggested move as an arrow. Click it again to stop monitoring.
