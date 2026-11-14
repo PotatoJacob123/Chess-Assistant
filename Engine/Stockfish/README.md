@@ -1,12 +1,15 @@
-## Extract Stockfish in this folder
-Link: https://stockfishchess.org/download/
+## Stockfish
 
-## File Structure
+Stockfish is included with this project. If you need to download it separately, get it from the [official Stockfish website](https://stockfishchess.org/download/).
+
+The engine files are located here:
+
+```text
 Engine/
-│
 ├── Stockfish/
-│   ├── scripts
-│   ├── src
-│   ├── wiki
-│   └── other files
-└── StockFishService.cs
+│   ├── stockfish.exe
+│   ├── Copying.txt
+│   ├── scripts/
+│   ├── src/
+│   └── wiki/
+└── StockfishService.cs
