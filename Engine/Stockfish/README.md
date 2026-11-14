@@ -4,12 +4,14 @@ Stockfish is included with this project. If you need to download it separately, 
 
 The engine files are located here:
 
+## File Structure
 ```text
 Engine/
+│
 ├── Stockfish/
-│   ├── stockfish.exe
-│   ├── Copying.txt
-│   ├── scripts/
-│   ├── src/
-│   └── wiki/
-└── StockfishService.cs
+│   ├── scripts
+│   ├── src
+│   ├── wiki
+│   └── other files
+│
+└── StockFishService.cs
