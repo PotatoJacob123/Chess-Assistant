@@ -29,11 +29,10 @@ The first recognition may take longer while Python loads its model. If the app c
 
 ## Use the app
 
-1. Open **Select Chessboard** and drag a square selection around the board on screen. The selector covers the virtual desktop, including other monitors.
-2. Choose **Preview Board Grid**. Drag the four green markers to the board's outer corners, then save the calibration. The preview requires a board capture first.
-3. Set **Board View** to match the board on screen: White at Bottom or Black at Bottom.
-4. Choose **White to Move** or **Black to Move** when you need to set the side to move manually.
-5. Choose **Start / Stop Live Analysis** to monitor for changes and show Stockfish's suggested move as an arrow. Click it again to stop monitoring.
+1. Open **Select Chessboard** and drag a square selection tightly around the board on screen. The selector covers the virtual desktop, including other monitors. The selection is used to calibrate the board automatically.
+2. Set **Board View** to match the board on screen: White at Bottom or Black at Bottom.
+3. Choose **White to Move** or **Black to Move** when you need to set the side to move manually.
+4. Choose **Start / Stop Live Analysis** to monitor for changes and show Stockfish's suggested move as an arrow. Click it again to stop monitoring.
 
 The board capture, cropped image, and calibration file are stored in `%USERPROFILE%\Pictures\ChessAssistant`.
 
@@ -42,7 +41,7 @@ The board-view setting controls how chess coordinates are mapped to the captured
 ## Other controls
 
 - **Recognize Pieces** performs recognition and analysis for the current capture.
-- **Show Test Overlay** draws a sample arrow; **Hide Overlay** hides the overlay window.
+- Stockfish's evaluation shows whether White or Black is ahead, with the score in approximate pawn units. Mate scores are shown when Stockfish finds a forced mate.
 - **Clear Arrow** removes the current arrow.
 - **Preview Board Crop** opens the latest cropped board image.
 - The **Overlay Settings** checkboxes are currently visual controls; they are not yet connected to overlay behavior.
