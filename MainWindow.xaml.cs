@@ -1,10 +1,10 @@
-﻿
+
 using System;
 using System.Windows;
 using ChessAssistant.Windows;
 using System.IO;
-using ChessAssistant.Capture;
 using System.Text.Json;
+using ChessAssistant.Capture;
 using ChessAssistant.Recognition;
 using ChessAssistant.Chess;
 using ChessAssistant.Engine;
@@ -26,6 +26,7 @@ public partial class MainWindow : Window
     private char _sideToMove = 'w';
     private string? _lastRecognizedPosition;
     private StockfishService? _stockfish;
+    private long _analysisRequestId;
     private ChessImageRecognitionService? _recognitionService;
     private string? _pendingPosition;
     private int _pendingPositionCount;
@@ -77,6 +78,10 @@ public partial class MainWindow : Window
                 bounds.Top,
                 bounds.Width);
 
+            bool overlayWasVisible = _overlayWindow.IsVisible;
+            if (overlayWasVisible)
+                _overlayWindow.Hide();
+
             try
             {
                 // Save the screenshot in the user's Pictures folder.
@@ -96,12 +101,31 @@ public partial class MainWindow : Window
                     selector.SelectedBoardPixelBounds.Value,
                     filePath);
 
+                string calibrationPath = Path.Combine(
+                    folder,
+                    "board-calibration.json");
+                double[][] fullBoardCalibration =
+                [
+                    [0.0, 0.0],
+                    [1.0, 0.0],
+                    [1.0, 1.0],
+                    [0.0, 1.0]
+                ];
+                File.WriteAllText(
+                    calibrationPath,
+                    JsonSerializer.Serialize(fullBoardCalibration));
+
                 BoardStatus.Text =
-                    $"Board captured successfully! {filePath}";
+                    $"Board captured and calibrated from the selected square. {filePath}";
             }
             catch (Exception ex)
             {
                 BoardStatus.Text = "Capture failed: " + ex.Message;
+            }
+            finally
+            {
+                if (overlayWasVisible)
+                    _overlayWindow.Show();
             }
         }
         else
@@ -155,13 +179,14 @@ public partial class MainWindow : Window
 
         _monitorTimer = new DispatcherTimer
         {
-            Interval = TimeSpan.FromMicroseconds(200)
+            Interval = TimeSpan.FromSeconds(1)
         };
 
         _monitorTimer.Tick += MonitorBoard_Tick;
         _monitorTimer.Start();
 
         EngineStatus.Text = "Live monitoring started (1-second interval).";
+        MonitorBoard_Tick(this, EventArgs.Empty);
     }
 
     private async void MonitorBoard_Tick(
@@ -173,9 +198,6 @@ public partial class MainWindow : Window
             return;
 
         _isProcessingBoard = true;
-
-        // bool overlayWasVisible =
-        //     _overlayWindow != null && _overlayWindow.IsVisible;
 
         try
         {
@@ -199,11 +221,8 @@ public partial class MainWindow : Window
                 folder,
                 "board-cropped.png");
 
-            // Hide the overlay so its arrows aren't captured.
-            // if (overlayWasVisible)
-            //     _overlayWindow!.Hide();
-
-            // Capture the current board directly into memory.
+            // ScreenCaptureService omits CAPTUREBLT, so the layered arrow
+            // overlay is excluded without hiding it and flickering on screen.
             var capturedImage = ScreenCaptureService.Capture(
                 _selectedBoardPixelBounds!.Value);
 
@@ -277,143 +296,17 @@ public partial class MainWindow : Window
         }
         finally
         {
-            // Restore the overlay if it was visible before capture.
-            // if (overlayWasVisible && _overlayWindow != null)
-            //     _overlayWindow.Show();
-
             _isProcessingBoard = false;
         }
     }
 
 
-    private void ShowOverlay_Click(
-        object sender,
-        RoutedEventArgs e)
-    {
-        _overlayWindow ??= new OverlayWindow();
-
-        if (_selectedBoardBounds.HasValue)
-        {
-            Rect bounds = _selectedBoardBounds.Value;
-
-            _overlayWindow.SetBoardBounds(
-                bounds.Left,
-                bounds.Top,
-                bounds.Width);
-        }
-        else
-        {
-            double size = Math.Min(
-                480,
-                Math.Min(
-                    SystemParameters.PrimaryScreenWidth - 80,
-                    SystemParameters.PrimaryScreenHeight - 120));
-
-            double left =
-                (SystemParameters.PrimaryScreenWidth - size) / 2;
-
-            double top =
-                (SystemParameters.PrimaryScreenHeight - size) / 2;
-
-            _overlayWindow.SetBoardBounds(left, top, size);
-        }
-
-        if (!_overlayWindow.IsVisible)
-        {
-            _overlayWindow.Show();
-        }
-
-        _overlayWindow.DrawArrow("e2", "e4", _whiteAtBottom);
-
-        BoardStatus.Text = "Test overlay active";
-    }
-
-    private void HideOverlay_Click(
-        object sender,
-        RoutedEventArgs e)
-    {
-        _overlayWindow?.Hide();
-
-        BoardStatus.Text = "Overlay hidden";
-    }
-
-    private void PreviewBoardGrid_Click(
-        object sender,
-        RoutedEventArgs e)
-    {
-        string picturesFolder =
-            Environment.GetFolderPath(
-                Environment.SpecialFolder.MyPictures);
-
-        string folder = Path.Combine(
-            picturesFolder,
-            "ChessAssistant");
-
-        string imagePath = Path.Combine(
-            folder,
-            "board-capture.png");
-
-        if (!File.Exists(imagePath))
-        {
-            MessageBox.Show(
-                "No board capture found. Please select a chessboard first.",
-                "Chess Assistant",
-                MessageBoxButton.OK,
-                MessageBoxImage.Warning);
-
-            return;
-        }
-
-        BoardCalibrationWindow calibration =
-            new BoardCalibrationWindow(imagePath);
-
-        bool? result = calibration.ShowDialog();
-
-        if (result == true &&
-            calibration.SelectedCorners != null)
-        {
-            Point[] corners = calibration.SelectedCorners;
-
-            // Store the coordinates as normalized values (0 to 1).
-            double[][] normalizedCorners = new double[4][];
-
-            for (int i = 0; i < 4; i++)
-            {
-                normalizedCorners[i] = new double[]
-                {
-                    corners[i].X / 800.0,
-                    corners[i].Y / 800.0
-                };
-            }
-
-            string calibrationPath = Path.Combine(
-                folder,
-                "board-calibration.json");
-
-            string json = JsonSerializer.Serialize(
-                normalizedCorners,
-                new JsonSerializerOptions
-                {
-                    WriteIndented = true
-                });
-
-            File.WriteAllText(calibrationPath, json);
-
-            BoardStatus.Text = "Chessboard calibration saved!";
-            
-            MessageBox.Show(
-                "Calibration saved successfully!\n\n" +
-                calibrationPath,
-                "Chess Assistant",
-                MessageBoxButton.OK,
-                MessageBoxImage.Information);
-        }
-    }
-    
     private async void RecognizePieces_Click(
         object sender,
         RoutedEventArgs e)
     {
+        long requestId = ++_analysisRequestId;
+
         string picturesFolder =
             Environment.GetFolderPath(
                 Environment.SpecialFolder.MyPictures);
@@ -464,24 +357,27 @@ public partial class MainWindow : Window
                 await recognizer.RecognizeBoardAsync(
                     croppedImagePath);
 
+            if (requestId != _analysisRequestId)
+                return;
+
             // Display the recognized position for testing.
+            char sideToMove = _sideToMove;
             string fen = FenBuilder.Create(
                 ToStandardChessOrientation(piecePlacement),
-                'w',
+                sideToMove,
                 "KQkq",
                 "-",
                 0,
                 1);
-            string enginePath = Path.Combine(
-                AppDomain.CurrentDomain.BaseDirectory,
-                "Engine",
-                "Stockfish",
-                "stockfish.exe");
+            PositionEvaluation.Text = "Evaluating current position...";
+            StockfishAnalysisResult analysis =
+                await GetStockfishService().AnalyzeAsync(fen, 8);
 
-            _stockfish ??= new StockfishService(enginePath);
+            if (requestId != _analysisRequestId)
+                return;
 
-            string bestMove =
-                await _stockfish.GetBestMoveAsync(fen, 8);
+            string bestMove = analysis.BestMove;
+            PositionEvaluation.Text = FormatPositionEvaluation(analysis, sideToMove);
 
             // Check that Stockfish returned a valid UCI move.
             if (bestMove.Length < 4 ||
@@ -531,11 +427,15 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            MessageBox.Show(
-                ex.Message,
-                "Recognition Error",
-                MessageBoxButton.OK,
-                MessageBoxImage.Error);
+            if (requestId == _analysisRequestId)
+            {
+                PositionEvaluation.Text = "Position evaluation: unavailable";
+                MessageBox.Show(
+                    ex.Message,
+                    "Recognition Error",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+            }
         }
     }
 
@@ -586,7 +486,9 @@ public partial class MainWindow : Window
         RoutedEventArgs e)
     {
         _sideToMove = 'w';
-        EngineStatus.Text = "White to move selected.";
+        EngineStatus.Text = _lastRecognizedPosition == null
+            ? "White to move selected. Waiting for the first board scan..."
+            : "White to move selected.";
 
         if (_lastRecognizedPosition != null)
             await AnalyzePositionAsync(_lastRecognizedPosition, 4);
@@ -597,34 +499,38 @@ public partial class MainWindow : Window
         RoutedEventArgs e)
     {
         _sideToMove = 'b';
-        EngineStatus.Text = "Black to move selected.";
+        EngineStatus.Text = _lastRecognizedPosition == null
+            ? "Black to move selected. Waiting for the first board scan..."
+            : "Black to move selected.";
 
         if (_lastRecognizedPosition != null)
             await AnalyzePositionAsync(_lastRecognizedPosition, 4);
     }
     private async Task AnalyzePositionAsync(string piecePlacement, int depth = 8)
     {
+        long requestId = ++_analysisRequestId;
+        char sideToMove = _sideToMove;
+
         try
         {
+            PositionEvaluation.Text = "Evaluating current position...";
+
             string fen = FenBuilder.Create(
                 ToStandardChessOrientation(piecePlacement),
-                _sideToMove,
+                sideToMove,
                 "KQkq",
                 "-",
                 0,
                 1);
 
-            string enginePath = Path.Combine(
-                AppDomain.CurrentDomain.BaseDirectory,
-                "Engine",
-                "Stockfish",
-                "stockfish.exe");
+            StockfishAnalysisResult analysis =
+                await GetStockfishService().AnalyzeAsync(fen, depth);
 
-            using StockfishService stockfish =
-                new StockfishService(enginePath);
+            if (requestId != _analysisRequestId)
+                return;
 
-            string bestMove =
-                await stockfish.GetBestMoveAsync(fen, depth);
+            string bestMove = analysis.BestMove;
+            PositionEvaluation.Text = FormatPositionEvaluation(analysis, sideToMove);
 
             if (bestMove.Length < 4 || bestMove == "0000")
             {
@@ -653,13 +559,66 @@ public partial class MainWindow : Window
                 _whiteAtBottom);
 
             EngineStatus.Text =
-                $"{(_sideToMove == 'w' ? "White" : "Black")} best move: {bestMove}";
+                $"{(sideToMove == 'w' ? "White" : "Black")} best move: {bestMove}";
         }
         catch (Exception ex)
         {
-            EngineStatus.Text = "Analysis error: " + ex.Message;
+            if (requestId == _analysisRequestId)
+            {
+                PositionEvaluation.Text = "Position evaluation: unavailable";
+                EngineStatus.Text = "Analysis error: " + ex.Message;
+            }
         }
     }
+
+    private StockfishService GetStockfishService()
+    {
+        if (_stockfish == null)
+        {
+            string enginePath = Path.Combine(
+                AppDomain.CurrentDomain.BaseDirectory,
+                "Engine",
+                "Stockfish",
+                "stockfish.exe");
+
+            _stockfish = new StockfishService(enginePath);
+        }
+
+        return _stockfish;
+    }
+
+    private static string FormatPositionEvaluation(
+        StockfishAnalysisResult analysis,
+        char sideToMove)
+    {
+        int whitePerspective = sideToMove == 'w' ? 1 : -1;
+
+        if (analysis.MateIn.HasValue)
+        {
+            int mateIn = analysis.MateIn.Value * whitePerspective;
+            string winner = mateIn > 0 ? "White" : "Black";
+            return mateIn == 0
+                ? "Position evaluation: Checkmate"
+                : $"Position evaluation: {winner} is winning (mate in {Math.Abs(mateIn)})";
+        }
+
+        if (!analysis.EvaluationCentipawns.HasValue)
+            return "Position evaluation: unavailable";
+
+        double pawns = analysis.EvaluationCentipawns.Value * whitePerspective / 100.0;
+        string assessment = Math.Abs(pawns) < 0.4
+            ? "Position is roughly equal"
+            : pawns > 2.0
+                ? "White is winning"
+                : pawns > 0
+                    ? "White is ahead"
+                    : pawns < -2.0
+                        ? "Black is winning"
+                        : "Black is ahead";
+
+        return $"{assessment} ({pawns:+0.00;-0.00;0.00})";
+    }
+
     private async void FlipBoardOrientation_Click(
         object sender,
         RoutedEventArgs e)
