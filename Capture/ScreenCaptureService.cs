@@ -11,7 +11,6 @@ namespace ChessAssistant.Capture;
 public static class ScreenCaptureService
 {
     private const uint SRCCOPY = 0x00CC0020;
-    private const uint CAPTUREBLT = 0x40000000;
 
     [DllImport("user32.dll")]
     private static extern IntPtr GetDC(IntPtr hWnd);
@@ -95,7 +94,9 @@ public static class ScreenCaptureService
                 screenDC,
                 x,
                 y,
-                SRCCOPY | CAPTUREBLT);
+                // Avoid CAPTUREBLT so transparent topmost overlays are not
+                // composited into the board image.
+                SRCCOPY);
 
             if (!copied)
                 throw new InvalidOperationException(
