@@ -7,12 +7,19 @@ using System.Threading.Tasks;
 
 namespace ChessAssistant.Engine;
 
+public sealed record StockfishAnalysisResult(
+    string BestMove,
+    int? EvaluationCentipawns,
+    int? MateIn);
+
 public sealed class StockfishService : IDisposable
 {
     private readonly string _enginePath;
     private readonly SemaphoreSlim _gate = new(1, 1);
+    private readonly object _stderrLock = new();
 
     private Process? _process;
+    private string _recentStandardError = string.Empty;
 
     public StockfishService(string enginePath)
     {
@@ -39,6 +46,18 @@ public sealed class StockfishService : IDisposable
         int depth = 15,
         CancellationToken cancellationToken = default)
     {
+        StockfishAnalysisResult result = await AnalyzeAsync(
+            fen,
+            depth,
+            cancellationToken);
+        return result.BestMove;
+    }
+
+    public async Task<StockfishAnalysisResult> AnalyzeAsync(
+        string fen,
+        int depth = 15,
+        CancellationToken cancellationToken = default)
+    {
         if (string.IsNullOrWhiteSpace(fen) ||
             fen.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length != 6)
         {
@@ -52,34 +71,21 @@ public sealed class StockfishService : IDisposable
 
         try
         {
-            await EnsureStartedAsync(cancellationToken);
-
-            await SendCommandAsync("ucinewgame");
-            await SendCommandAsync("isready");
-            await WaitForResponseAsync("readyok", cancellationToken);
-
-            await SendCommandAsync($"position fen {fen}");
-            await SendCommandAsync($"go depth {depth}");
-
-            while (true)
+            for (int attempt = 0; attempt < 2; attempt++)
             {
-                string line = await ReadLineAsync(
-                    TimeSpan.FromMinutes(2),
-                    cancellationToken);
-
-                if (line.StartsWith("bestmove ", StringComparison.Ordinal))
+                try
                 {
-                    string[] parts = line.Split(
-                        ' ',
-                        StringSplitOptions.RemoveEmptyEntries);
-
-                    if (parts.Length < 2)
-                        throw new InvalidOperationException(
-                            "Stockfish returned an invalid bestmove response.");
-
-                    return parts[1];
+                    return await AnalyzeCoreAsync(fen, depth, cancellationToken);
+                }
+                catch (InvalidOperationException) when
+                    (attempt == 0 && _process?.HasExited == true)
+                {
+                    _process.Dispose();
+                    _process = null;
                 }
             }
+
+            throw new InvalidOperationException("Stockfish analysis failed after restarting the engine.");
         }
         finally
         {
@@ -87,11 +93,94 @@ public sealed class StockfishService : IDisposable
         }
     }
 
+    private async Task<StockfishAnalysisResult> AnalyzeCoreAsync(
+        string fen,
+        int depth,
+        CancellationToken cancellationToken)
+    {
+        await EnsureStartedAsync(cancellationToken);
+
+        await SendCommandAsync("ucinewgame");
+        await SendCommandAsync("isready");
+        await WaitForResponseAsync("readyok", cancellationToken);
+
+        await SendCommandAsync($"position fen {fen}");
+        await SendCommandAsync($"go depth {depth}");
+
+        int? evaluationCentipawns = null;
+        int? mateIn = null;
+
+        while (true)
+        {
+            string line = await ReadLineAsync(
+                TimeSpan.FromMinutes(2),
+                cancellationToken);
+
+            if (line.StartsWith("bestmove ", StringComparison.Ordinal))
+            {
+                string[] parts = line.Split(
+                    ' ',
+                    StringSplitOptions.RemoveEmptyEntries);
+
+                if (parts.Length < 2)
+                    throw new InvalidOperationException(
+                        "Stockfish returned an invalid bestmove response.");
+
+                return new StockfishAnalysisResult(
+                    parts[1],
+                    evaluationCentipawns,
+                    mateIn);
+            }
+
+            if (TryParseScore(line, out int? centipawns, out int? mate))
+            {
+                evaluationCentipawns = centipawns;
+                mateIn = mate;
+            }
+        }
+    }
+
+    private static bool TryParseScore(
+        string line,
+        out int? centipawns,
+        out int? mate)
+    {
+        centipawns = null;
+        mate = null;
+
+        string[] parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        int scoreIndex = Array.IndexOf(parts, "score");
+        if (scoreIndex < 0 || scoreIndex + 2 >= parts.Length)
+            return false;
+
+        if (parts[scoreIndex + 1] == "cp" &&
+            int.TryParse(parts[scoreIndex + 2], out int cp))
+        {
+            centipawns = cp;
+            return true;
+        }
+
+        if (parts[scoreIndex + 1] == "mate" &&
+            int.TryParse(parts[scoreIndex + 2], out int mateValue))
+        {
+            mate = mateValue;
+            return true;
+        }
+
+        return false;
+    }
+
     private async Task EnsureStartedAsync(
         CancellationToken cancellationToken)
     {
         if (_process != null && !_process.HasExited)
             return;
+
+        if (_process != null)
+        {
+            _process.Dispose();
+            _process = null;
+        }
 
         if (!File.Exists(_enginePath))
         {
@@ -107,17 +196,36 @@ public sealed class StockfishService : IDisposable
             UseShellExecute = false,
             RedirectStandardInput = true,
             RedirectStandardOutput = true,
+            RedirectStandardError = true,
             CreateNoWindow = true
         };
+
+        lock (_stderrLock)
+            _recentStandardError = string.Empty;
 
         _process = new Process
         {
             StartInfo = startInfo
         };
 
+        _process.ErrorDataReceived += (_, args) =>
+        {
+            if (string.IsNullOrWhiteSpace(args.Data))
+                return;
+
+            lock (_stderrLock)
+            {
+                _recentStandardError += args.Data + Environment.NewLine;
+                if (_recentStandardError.Length > 4000)
+                    _recentStandardError = _recentStandardError[^4000..];
+            }
+        };
+
         if (!_process.Start())
             throw new InvalidOperationException(
                 "Could not start Stockfish.");
+
+        _process.BeginErrorReadLine();
 
         await SendCommandAsync("uci");
 
@@ -130,7 +238,7 @@ public sealed class StockfishService : IDisposable
     {
         if (_process == null || _process.HasExited)
             throw new InvalidOperationException(
-                "Stockfish is not running.");
+                GetStoppedProcessMessage("Stockfish is not running."));
 
         await _process.StandardInput.WriteLineAsync(command);
         await _process.StandardInput.FlushAsync();
@@ -157,7 +265,7 @@ public sealed class StockfishService : IDisposable
     {
         if (_process == null || _process.HasExited)
             throw new InvalidOperationException(
-                "Stockfish unexpectedly stopped.");
+                GetStoppedProcessMessage("Stockfish unexpectedly stopped."));
 
         using CancellationTokenSource timeoutSource =
             CancellationTokenSource.CreateLinkedTokenSource(
@@ -170,9 +278,34 @@ public sealed class StockfishService : IDisposable
 
         if (line == null)
             throw new InvalidOperationException(
-                "Stockfish closed its output stream.");
+                GetStoppedProcessMessage("Stockfish closed its output stream."));
 
         return line;
+    }
+
+    private string GetStoppedProcessMessage(string message)
+    {
+        string exitCode = "unknown";
+        if (_process != null)
+        {
+            try
+            {
+                if (_process.HasExited)
+                    exitCode = _process.ExitCode.ToString();
+            }
+            catch
+            {
+                // The process may have exited between checking and reading its status.
+            }
+        }
+
+        string standardError;
+        lock (_stderrLock)
+            standardError = _recentStandardError.Trim();
+
+        return string.IsNullOrWhiteSpace(standardError)
+            ? $"{message} Exit code: {exitCode}."
+            : $"{message} Exit code: {exitCode}. Stockfish error output: {standardError}";
     }
 
     public void Dispose()
