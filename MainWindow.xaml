@@ -68,11 +68,6 @@
                                     Background="#2563EB"
                                     Margin="0,0,6,8"
                                     Click="SelectBoard_Click"/>
-                            <Button Content="Preview Board Grid"
-                                    Style="{StaticResource ActionButton}"
-                                    Background="#2563EB"
-                                    Margin="6,0,0,8"
-                                    Click="PreviewBoardGrid_Click"/>
                             <Button Content="Recognize Pieces"
                                     Style="{StaticResource ActionButton}"
                                     Background="#7C3AED"
@@ -83,16 +78,6 @@
                                     Background="#475569"
                                     Margin="6,0,0,8"
                                     Click="PreviewBoardCrop_Click"/>
-                            <Button Content="Show Test Overlay"
-                                    Style="{StaticResource ActionButton}"
-                                    Background="#16A34A"
-                                    Margin="0,0,6,0"
-                                    Click="ShowOverlay_Click"/>
-                            <Button Content="Hide Overlay"
-                                    Style="{StaticResource ActionButton}"
-                                    Background="#475569"
-                                    Margin="6,0,0,0"
-                                    Click="HideOverlay_Click"/>
                         </UniformGrid>
 
                         <Button Content="Clear Arrow"
@@ -104,7 +89,7 @@
                 </Border>
 
                 <Border Background="#172235" CornerRadius="12" Padding="16" Margin="0,0,0,14">
-                    <StackPanel>
+            <StackPanel>
                         <TextBlock Text="ENGINE ANALYSIS" Style="{StaticResource SectionTitle}"/>
                         <TextBlock Text="Stockfish"
                                    FontSize="16"
@@ -114,6 +99,13 @@
                                    Foreground="#FBBF24"
                                    TextWrapping="Wrap"
                                    Margin="0,5,0,12"/>
+                        <TextBlock x:Name="PositionEvaluation"
+                                   Text="Position evaluation: --"
+                                   FontSize="15"
+                                   FontWeight="SemiBold"
+                                   Foreground="#E2E8F0"
+                                   TextWrapping="Wrap"
+                                   Margin="0,0,0,12"/>
 
                         <Button Content="Start / Stop Live Analysis"
                                 Style="{StaticResource ActionButton}"
