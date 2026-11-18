@@ -28,8 +28,6 @@ public partial class MainWindow : Window
     private StockfishService? _stockfish;
     private long _analysisRequestId;
     private ChessImageRecognitionService? _recognitionService;
-    private string? _pendingPosition;
-    private int _pendingPositionCount;
     // The overlay maps UCI squares onto the captured board using this view.
     // Start in the standard chess orientation to match the initial button label.
     private bool _whiteAtBottom = true;
@@ -174,18 +172,15 @@ public partial class MainWindow : Window
         }
 
         _previousPosition = null;
-        _pendingPosition = null;
-        _pendingPositionCount = 0;
-
         _monitorTimer = new DispatcherTimer
         {
-            Interval = TimeSpan.FromSeconds(1)
+            Interval = TimeSpan.FromMilliseconds(250)
         };
 
         _monitorTimer.Tick += MonitorBoard_Tick;
         _monitorTimer.Start();
 
-        EngineStatus.Text = "Live monitoring started (1-second interval).";
+        EngineStatus.Text = "Live monitoring started (250 ms scan interval).";
         MonitorBoard_Tick(this, EventArgs.Empty);
     }
 
@@ -251,41 +246,20 @@ public partial class MainWindow : Window
 
                 EngineStatus.Text = "Initial position detected.";
 
-                await AnalyzePositionAsync(currentPosition);
+                await AnalyzePositionAsync(currentPosition, 5);
             }
             else if (_previousPosition != currentPosition)
             {
-                if (currentPosition == _pendingPosition)
-                {
-                    _pendingPositionCount++;
-                }
-                else
-                {
-                    _pendingPosition = currentPosition;
-                    _pendingPositionCount = 1;
-                }
+                _previousPosition = currentPosition;
+                _sideToMove = _sideToMove == 'w' ? 'b' : 'w';
 
-                // Require the same changed position to be detected twice.
-                if (_pendingPositionCount >= 2)
-                {
-                    _previousPosition = currentPosition;
+                EngineStatus.Text =
+                    $"{(_sideToMove == 'w' ? "White" : "Black")} to move. Analysing...";
 
-                    _pendingPosition = null;
-                    _pendingPositionCount = 0;
-
-                    _sideToMove = _sideToMove == 'w' ? 'b' : 'w';
-
-                    EngineStatus.Text =
-                        $"{(_sideToMove == 'w' ? "White" : "Black")} to move. Analysing...";
-
-                    await AnalyzePositionAsync(currentPosition);
-                }
+                await AnalyzePositionAsync(currentPosition, 5);
             }
             else
             {
-                _pendingPosition = null;
-                _pendingPositionCount = 0;
-
                 EngineStatus.Text = "Monitoring board... No change detected.";
             }
         }
